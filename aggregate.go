@@ -122,8 +122,14 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	S.Add(&sLG, &sRH)
 	S.Add(&S, &rhoHbase)
 
-	// Step 7: Transcript — append A, S and get challenges y, z.
+	// Step 7: Transcript — bind all V_j, then append A, S and get challenges y, z.
 	transcript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	for j := 0; j < m; j++ {
+		var vFr fr.Element
+		vFr.SetUint64(values[j])
+		Vj := PedersenCommitWithBase(&vFr, &elgamal.G, blindings[j], Hbase)
+		transcript.AppendPoint(fmt.Sprintf("V_%d", j), &Vj)
+	}
 	transcript.AppendPoint("A", &A)
 	transcript.AppendPoint("S", &S)
 	y := transcript.ChallengeScalar("y")
@@ -282,8 +288,11 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 
 	gens := getGenerators(dim)
 
-	// Reconstruct y, z, x from transcript.
+	// Reconstruct y, z, x from transcript (V_j bound first, then A, S).
 	transcript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	for j := 0; j < m; j++ {
+		transcript.AppendPoint(fmt.Sprintf("V_%d", j), &V[j])
+	}
 	transcript.AppendPoint("A", &proof.A)
 	transcript.AppendPoint("S", &proof.S)
 	y := transcript.ChallengeScalar("y")

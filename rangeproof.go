@@ -275,8 +275,14 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int) (*RangePr
 	S.Add(&sLG, &sRH)
 	S.Add(&S, &rhoHbase)
 
-	// Step 9: Transcript - append A, S and get challenges y, z.
+	// Compute commitment V = v*G + r*Hbase (needed for transcript binding).
+	var vFr fr.Element
+	vFr.SetUint64(v)
+	V := PedersenCommitWithBase(&vFr, &elgamal.G, r, Hbase)
+
+	// Step 9: Transcript - bind V, then append A, S and get challenges y, z.
 	transcript := elgamal.NewTranscript("bulletproofs-rangeproof")
+	transcript.AppendPoint("V", &V)
 	transcript.AppendPoint("A", &A)
 	transcript.AppendPoint("S", &S)
 	y := transcript.ChallengeScalar("y")
@@ -425,8 +431,9 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 	// Get generators for this bit width.
 	gens := getGenerators(n)
 
-	// Step 2: Reconstruct y, z, x from transcript.
+	// Step 2: Reconstruct y, z, x from transcript (V bound first, then A, S).
 	transcript := elgamal.NewTranscript("bulletproofs-rangeproof")
+	transcript.AppendPoint("V", V)
 	transcript.AppendPoint("A", &proof.A)
 	transcript.AppendPoint("S", &proof.S)
 	y := transcript.ChallengeScalar("y")
