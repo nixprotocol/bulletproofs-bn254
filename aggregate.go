@@ -31,7 +31,7 @@ type AggregateRangeProof struct {
 //   - blindings: blinding factors, one per value (V_j = v_j*G + blindings[j]*Hbase)
 //   - Hbase: the Pedersen blinding base
 //   - n: the bit width per value (will be padded to next power of 2 for total dim)
-func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.G1Affine, n int) (*AggregateRangeProof, error) {
+func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) (*AggregateRangeProof, error) {
 	m := len(values)
 	if m == 0 {
 		return nil, errors.New("aggregate rangeproof: no values provided")
@@ -123,7 +123,11 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	S.Add(&S, &rhoHbase)
 
 	// Step 7: Transcript — bind all V_j, then append A, S and get challenges y, z.
-	transcript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	if transcript == nil {
+		transcript = elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	} else {
+		transcript.AppendBytes("proof_type", []byte("aggregate-rangeproof"))
+	}
 	for j := 0; j < m; j++ {
 		var vFr fr.Element
 		vFr.SetUint64(values[j])
@@ -277,7 +281,7 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 //   - proof: the aggregate range proof
 //   - Hbase: the Pedersen blinding base
 //   - n: the bit width per value
-func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase *bn254.G1Affine, n int) bool {
+func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) bool {
 	m := len(V)
 	if m == 0 || n <= 0 {
 		return false
@@ -289,7 +293,11 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 	gens := getGenerators(dim)
 
 	// Reconstruct y, z, x from transcript (V_j bound first, then A, S).
-	transcript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	if transcript == nil {
+		transcript = elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
+	} else {
+		transcript.AppendBytes("proof_type", []byte("aggregate-rangeproof"))
+	}
 	for j := 0; j < m; j++ {
 		transcript.AppendPoint(fmt.Sprintf("V_%d", j), &V[j])
 	}

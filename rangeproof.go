@@ -200,7 +200,8 @@ func onesVector(n int) []fr.Element {
 //   - r: the blinding factor in V = v*G + r*Hbase
 //   - Hbase: the Pedersen blinding base (can be any G1 point)
 //   - n: the bit width (will be padded to next power of 2)
-func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int) (*RangeProof, error) {
+//   - transcript: optional pre-initialized Fiat-Shamir transcript (nil for default)
+func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) (*RangeProof, error) {
 	if n <= 0 {
 		return nil, errors.New("rangeproof: n must be positive")
 	}
@@ -281,7 +282,11 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int) (*RangePr
 	V := PedersenCommitWithBase(&vFr, &elgamal.G, r, Hbase)
 
 	// Step 9: Transcript - bind V, then append A, S and get challenges y, z.
-	transcript := elgamal.NewTranscript("bulletproofs-rangeproof")
+	if transcript == nil {
+		transcript = elgamal.NewTranscript("bulletproofs-rangeproof")
+	} else {
+		transcript.AppendBytes("proof_type", []byte("rangeproof"))
+	}
 	transcript.AppendPoint("V", &V)
 	transcript.AppendPoint("A", &A)
 	transcript.AppendPoint("S", &S)
@@ -420,7 +425,8 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int) (*RangePr
 //   - proof: the range proof
 //   - Hbase: the Pedersen blinding base used when creating V
 //   - n: the bit width (will be padded to next power of 2)
-func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n int) bool {
+//   - transcript: optional pre-initialized Fiat-Shamir transcript (nil for default)
+func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) bool {
 	if n <= 0 {
 		return false
 	}
@@ -432,7 +438,11 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 	gens := getGenerators(n)
 
 	// Step 2: Reconstruct y, z, x from transcript (V bound first, then A, S).
-	transcript := elgamal.NewTranscript("bulletproofs-rangeproof")
+	if transcript == nil {
+		transcript = elgamal.NewTranscript("bulletproofs-rangeproof")
+	} else {
+		transcript.AppendBytes("proof_type", []byte("rangeproof"))
+	}
 	transcript.AppendPoint("V", V)
 	transcript.AppendPoint("A", &proof.A)
 	transcript.AppendPoint("S", &proof.S)

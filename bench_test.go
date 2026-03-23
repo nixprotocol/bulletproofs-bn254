@@ -31,7 +31,7 @@ func BenchmarkRangeProve_8bit(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := RangeProve(42, &r, &H, 8)
+		_, err := RangeProve(42, &r, &H, 8, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -43,14 +43,14 @@ func BenchmarkRangeVerify_8bit(b *testing.B) {
 	r.SetRandom()
 
 	V := benchCommitValue(42, &r, &H)
-	proof, err := RangeProve(42, &r, &H, 8)
+	proof, err := RangeProve(42, &r, &H, 8, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ok := RangeVerify(&V, proof, &H, 8)
+		ok := RangeVerify(&V, proof, &H, 8, nil)
 		if !ok {
 			b.Fatal("verification failed")
 		}
@@ -66,7 +66,7 @@ func BenchmarkRangeProve_40bit(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := RangeProve(1000000, &r, &H, 40)
+		_, err := RangeProve(1000000, &r, &H, 40, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -78,14 +78,14 @@ func BenchmarkRangeVerify_40bit(b *testing.B) {
 	r.SetRandom()
 
 	V := benchCommitValue(1000000, &r, &H)
-	proof, err := RangeProve(1000000, &r, &H, 40)
+	proof, err := RangeProve(1000000, &r, &H, 40, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ok := RangeVerify(&V, proof, &H, 40)
+		ok := RangeVerify(&V, proof, &H, 40, nil)
 		if !ok {
 			b.Fatal("verification failed")
 		}
@@ -107,7 +107,7 @@ func BenchmarkAggregateProve_2x40bit(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := AggregateRangeProve(values, blindings, &H, 40)
+		_, err := AggregateRangeProve(values, blindings, &H, 40, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -125,14 +125,14 @@ func BenchmarkAggregateVerify_2x40bit(b *testing.B) {
 		Vs[j] = benchCommitValue(values[j], blindings[j], &H)
 	}
 
-	proof, err := AggregateRangeProve(values, blindings, &H, 40)
+	proof, err := AggregateRangeProve(values, blindings, &H, 40, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ok := AggregateRangeVerify(Vs, proof, &H, 40)
+		ok := AggregateRangeVerify(Vs, proof, &H, 40, nil)
 		if !ok {
 			b.Fatal("verification failed")
 		}
@@ -148,7 +148,7 @@ func BenchmarkThresholdProveLessThan(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveLessThan(5000, &r, &H, 10000, 40)
+		_, err := ProveLessThan(5000, &r, &H, 10000, 40, nil)
 		if err != nil {
 			b.Fatal(err)
 		}

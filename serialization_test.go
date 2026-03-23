@@ -19,7 +19,7 @@ func TestRangeProofMarshalRoundTrip(t *testing.T) {
 
 	V := commitValue(v, &r, &H)
 
-	proof, err := RangeProve(v, &r, &H, n)
+	proof, err := RangeProve(v, &r, &H, n, nil)
 	require.NoError(t, err)
 
 	data, err := proof.Marshal()
@@ -31,7 +31,7 @@ func TestRangeProofMarshalRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify with unmarshaled proof.
-	ok := RangeVerify(&V, &proof2, &H, n)
+	ok := RangeVerify(&V, &proof2, &H, n, nil)
 	assert.True(t, ok, "unmarshaled range proof should verify")
 }
 
@@ -43,7 +43,7 @@ func TestIPProofMarshalRoundTrip(t *testing.T) {
 	_, err := r.SetRandom()
 	require.NoError(t, err)
 
-	proof, err := RangeProve(v, &r, &H, n)
+	proof, err := RangeProve(v, &r, &H, n, nil)
 	require.NoError(t, err)
 
 	// Marshal just the IP proof.
@@ -76,7 +76,7 @@ func TestThresholdProofMarshalRoundTrip(t *testing.T) {
 
 	V := commitValue(v, &r, &H)
 
-	proof, err := ProveLessThan(v, &r, &H, threshold, n)
+	proof, err := ProveLessThan(v, &r, &H, threshold, n, nil)
 	require.NoError(t, err)
 
 	data, err := proof.Marshal()
@@ -86,7 +86,7 @@ func TestThresholdProofMarshalRoundTrip(t *testing.T) {
 	err = proof2.Unmarshal(data)
 	require.NoError(t, err)
 
-	ok := VerifyLessThan(&V, &proof2, &H, threshold, n)
+	ok := VerifyLessThan(&V, &proof2, &H, threshold, n, nil)
 	assert.True(t, ok, "unmarshaled threshold proof should verify")
 }
 
@@ -98,7 +98,7 @@ func TestRangeProofSize(t *testing.T) {
 	_, err := r.SetRandom()
 	require.NoError(t, err)
 
-	proof, err := RangeProve(v, &r, &H, n)
+	proof, err := RangeProve(v, &r, &H, n, nil)
 	require.NoError(t, err)
 
 	data, err := proof.Marshal()
