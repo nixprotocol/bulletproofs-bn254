@@ -103,6 +103,93 @@ func TestAggregateProof_WrongCommitment(t *testing.T) {
 	assert.False(t, ok, "tampered commitment should not verify")
 }
 
+func TestAggregateProof_HbaseIdentity(t *testing.T) {
+	values := []uint64{1000}
+	n := 40
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+	blindings := []*fr.Element{&r}
+
+	var identity bn254.G1Affine
+	identity.SetInfinity()
+
+	_, err = AggregateRangeProve(values, blindings, &identity, n, nil)
+	assert.Error(t, err, "should reject identity point as Hbase")
+	assert.Contains(t, err.Error(), "identity point")
+}
+
+func TestAggregateProof_ZeroBlinding(t *testing.T) {
+	values := []uint64{1000, 500}
+	n := 40
+
+	var r1 fr.Element
+	_, err := r1.SetRandom()
+	require.NoError(t, err)
+	var r2 fr.Element
+	r2.SetZero()
+	blindings := []*fr.Element{&r1, &r2}
+
+	_, err = AggregateRangeProve(values, blindings, &H, n, nil)
+	assert.Error(t, err, "should reject zero blinding factor")
+	assert.Contains(t, err.Error(), "blinding[1] must not be zero")
+}
+
+func TestAggregateProof_NilInputs(t *testing.T) {
+	values := []uint64{1000}
+	n := 40
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	_, err = AggregateRangeProve(values, []*fr.Element{&r}, nil, n, nil)
+	assert.Error(t, err, "nil Hbase should be rejected")
+	assert.Contains(t, err.Error(), "nil")
+
+	_, err = AggregateRangeProve(values, []*fr.Element{nil}, &H, n, nil)
+	assert.Error(t, err, "nil blinding should be rejected")
+	assert.Contains(t, err.Error(), "nil")
+}
+
+func TestAggregateVerify_InvalidInputs(t *testing.T) {
+	values := []uint64{1000, 500}
+	n := 40
+
+	blindings := make([]*fr.Element, len(values))
+	Vs := make([]bn254.G1Affine, len(values))
+	for j := range values {
+		var r fr.Element
+		_, err := r.SetRandom()
+		require.NoError(t, err)
+		blindings[j] = new(fr.Element).Set(&r)
+		Vs[j] = commitValue(values[j], blindings[j], &H)
+	}
+
+	proof, err := AggregateRangeProve(values, blindings, &H, n, nil)
+	require.NoError(t, err)
+
+	// Identity Hbase should fail.
+	var identity bn254.G1Affine
+	identity.SetInfinity()
+	assert.False(t, AggregateRangeVerify(Vs, proof, &identity, n, nil), "identity Hbase should fail")
+
+	// Identity in V should fail.
+	corruptedVs := make([]bn254.G1Affine, len(Vs))
+	copy(corruptedVs, Vs)
+	corruptedVs[0].SetInfinity()
+	assert.False(t, AggregateRangeVerify(corruptedVs, proof, &H, n, nil), "identity V[0] should fail")
+
+	// Empty values should fail.
+	assert.False(t, AggregateRangeVerify(nil, proof, &H, n, nil), "nil V should fail")
+	assert.False(t, AggregateRangeVerify([]bn254.G1Affine{}, proof, &H, n, nil), "empty V should fail")
+
+	// Nil proof/Hbase should fail.
+	assert.False(t, AggregateRangeVerify(Vs, nil, &H, n, nil), "nil proof should fail")
+	assert.False(t, AggregateRangeVerify(Vs, proof, nil, n, nil), "nil Hbase should fail")
+}
+
 func TestAggregateProof_WithTranscript(t *testing.T) {
 	values := []uint64{1000, 500}
 	n := 40

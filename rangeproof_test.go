@@ -160,6 +160,125 @@ func TestRangeProof_CustomH(t *testing.T) {
 	assert.True(t, ok, "range proof with custom H (ElGamal pk) should verify")
 }
 
+func TestRangeProof_HbaseIdentity(t *testing.T) {
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	var identity bn254.G1Affine
+	identity.SetInfinity()
+
+	_, err = RangeProve(v, &r, &identity, n, nil)
+	assert.Error(t, err, "should reject identity point as Hbase")
+	assert.Contains(t, err.Error(), "identity point")
+}
+
+func TestRangeProof_HbaseOffCurve(t *testing.T) {
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	// Construct an off-curve point by taking a valid point and corrupting Y.
+	var offCurve bn254.G1Affine
+	offCurve.Set(&H)
+	offCurve.Y.SetOne() // corrupted Y almost certainly not on curve
+	if offCurve.IsOnCurve() {
+		t.Skip("unlikely: corrupted point is still on curve")
+	}
+
+	_, err = RangeProve(v, &r, &offCurve, n, nil)
+	assert.Error(t, err, "should reject off-curve Hbase")
+	assert.Contains(t, err.Error(), "not a valid curve point")
+}
+
+func TestRangeProof_ZeroBlinding(t *testing.T) {
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	r.SetZero()
+
+	_, err := RangeProve(v, &r, &H, n, nil)
+	assert.Error(t, err, "should reject zero blinding factor")
+	assert.Contains(t, err.Error(), "blinding factor")
+}
+
+func TestRangeProof_NilInputs(t *testing.T) {
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	_, err = RangeProve(v, nil, &H, n, nil)
+	assert.Error(t, err, "nil r should be rejected")
+	assert.Contains(t, err.Error(), "nil")
+
+	_, err = RangeProve(v, &r, nil, n, nil)
+	assert.Error(t, err, "nil Hbase should be rejected")
+	assert.Contains(t, err.Error(), "nil")
+}
+
+func TestRangeVerify_InvalidInputs(t *testing.T) {
+	// Create a valid proof first.
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	V := commitValue(v, &r, &H)
+
+	proof, err := RangeProve(v, &r, &H, n, nil)
+	require.NoError(t, err)
+
+	// Identity Hbase should fail verification.
+	var identity bn254.G1Affine
+	identity.SetInfinity()
+	assert.False(t, RangeVerify(&V, proof, &identity, n, nil), "identity Hbase should fail verify")
+
+	// Identity V should fail verification.
+	assert.False(t, RangeVerify(&identity, proof, &H, n, nil), "identity V should fail verify")
+
+	// n <= 0 should fail.
+	assert.False(t, RangeVerify(&V, proof, &H, 0, nil), "n=0 should fail verify")
+	assert.False(t, RangeVerify(&V, proof, &H, -1, nil), "n=-1 should fail verify")
+
+	// Nil inputs should fail.
+	assert.False(t, RangeVerify(nil, proof, &H, n, nil), "nil V should fail verify")
+	assert.False(t, RangeVerify(&V, nil, &H, n, nil), "nil proof should fail verify")
+	assert.False(t, RangeVerify(&V, proof, nil, n, nil), "nil Hbase should fail verify")
+}
+
+func TestRangeVerify_OffCurveProofPoints(t *testing.T) {
+	v := uint64(42)
+	n := 8
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	V := commitValue(v, &r, &H)
+
+	proof, err := RangeProve(v, &r, &H, n, nil)
+	require.NoError(t, err)
+
+	// Corrupt proof.A to an off-curve point.
+	tampered := *proof
+	tampered.A.Y.SetOne()
+	if !tampered.A.IsOnCurve() {
+		assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve proof.A should fail verify")
+	}
+}
+
 func TestRangeProof_WithTranscript(t *testing.T) {
 	v := uint64(42)
 	n := 8

@@ -62,7 +62,7 @@ func BenchmarkRangeProve_40bit(b *testing.B) {
 	r.SetRandom()
 
 	// Pre-warm the generator cache for n=40 (padded to 64).
-	_ = getGenerators(nextPowerOf2(40))
+	_, _ = getGenerators(nextPowerOf2(40))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -103,7 +103,7 @@ func BenchmarkAggregateProve_2x40bit(b *testing.B) {
 
 	// Pre-warm the generator cache.
 	dim := nextPowerOf2(40 * len(values))
-	_ = getGenerators(dim)
+	_, _ = getGenerators(dim)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -144,7 +144,7 @@ func BenchmarkThresholdProveLessThan(b *testing.B) {
 	r.SetRandom()
 
 	// Pre-warm the generator cache for n=40.
-	_ = getGenerators(nextPowerOf2(40))
+	_, _ = getGenerators(nextPowerOf2(40))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

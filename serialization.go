@@ -9,10 +9,10 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
 
-// Point and scalar sizes for BN254 compressed G1 points and field elements.
+// Point and scalar sizes derived from gnark-crypto library constants.
 const (
-	compressedG1Size = 32
-	scalarSize       = 32
+	compressedG1Size = bn254.SizeOfG1AffineCompressed // 32 bytes
+	scalarSize       = fr.Bytes                       // 32 bytes
 )
 
 // marshalCompressed serializes a G1 affine point to 32-byte compressed form.
@@ -72,6 +72,10 @@ func (p *IPProof) Marshal() ([]byte, error) {
 	return buf, nil
 }
 
+// maxIPRounds is the maximum number of inner product rounds accepted during
+// deserialization. log2(maxGeneratorN) = 20; we use a generous upper bound.
+const maxIPRounds = 64
+
 // Unmarshal deserializes an IPProof from bytes.
 func (p *IPProof) Unmarshal(data []byte) error {
 	if len(data) < 4 {
@@ -79,6 +83,9 @@ func (p *IPProof) Unmarshal(data []byte) error {
 	}
 
 	k := int(binary.BigEndian.Uint32(data[:4]))
+	if k > maxIPRounds {
+		return fmt.Errorf("ipproof unmarshal: numRounds %d exceeds maximum %d", k, maxIPRounds)
+	}
 	expectedSize := 4 + k*2*compressedG1Size + 2*scalarSize
 	if len(data) < expectedSize {
 		return fmt.Errorf("ipproof unmarshal: expected %d bytes, got %d", expectedSize, len(data))

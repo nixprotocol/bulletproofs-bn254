@@ -51,6 +51,38 @@ func TestGeneratorsDistinct(t *testing.T) {
 	}
 }
 
+func TestGetGenerators_CacheBounds(t *testing.T) {
+	// Valid sizes should work.
+	g1, err := getGenerators(8)
+	require.NoError(t, err)
+	assert.Equal(t, 8, g1.N)
+
+	g2, err := getGenerators(16)
+	require.NoError(t, err)
+	assert.Equal(t, 16, g2.N)
+
+	// Same size should return cached instance.
+	g1Again, err := getGenerators(8)
+	require.NoError(t, err)
+	assert.Equal(t, g1, g1Again, "should return cached generators")
+}
+
+func TestGetGenerators_OutOfRange(t *testing.T) {
+	_, err := getGenerators(0)
+	assert.Error(t, err, "n=0 should return error")
+
+	_, err = getGenerators(-1)
+	assert.Error(t, err, "n=-1 should return error")
+
+	_, err = getGenerators(maxGeneratorN + 1)
+	assert.Error(t, err, "n > maxGeneratorN should return error")
+}
+
+func TestNewGenerators_InvalidN(t *testing.T) {
+	assert.Panics(t, func() { NewGenerators(0) }, "n=0 should panic")
+	assert.Panics(t, func() { NewGenerators(-1) }, "n=-1 should panic")
+}
+
 func TestGeneratorsOnCurve(t *testing.T) {
 	gens := NewGenerators(64)
 

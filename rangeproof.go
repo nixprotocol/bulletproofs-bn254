@@ -1,7 +1,6 @@
 package bulletproofs
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/big"
@@ -33,18 +32,31 @@ func init() {
 }
 
 // Generator cache for range proofs.
+const (
+	maxGeneratorN      = 1 << 20 // max supported vector length (1M elements)
+	maxCacheEntries    = 32      // max distinct sizes cached
+)
+
 var generatorCache = make(map[int]*Generators)
 var generatorCacheMu sync.Mutex
 
-func getGenerators(n int) *Generators {
+func getGenerators(n int) (*Generators, error) {
+	if n <= 0 || n > maxGeneratorN {
+		return nil, fmt.Errorf("getGenerators: n=%d out of range [1, %d]", n, maxGeneratorN)
+	}
 	generatorCacheMu.Lock()
 	defer generatorCacheMu.Unlock()
 	if g, ok := generatorCache[n]; ok {
-		return g
+		return g, nil
+	}
+	if len(generatorCache) >= maxCacheEntries {
+		// Evict all entries to bound memory. In practice this never fires
+		// because n is always a power of 2 and <= 64 bits → at most ~7 entries.
+		generatorCache = make(map[int]*Generators)
 	}
 	g := NewGenerators(n)
 	generatorCache[n] = g
-	return g
+	return g, nil
 }
 
 // randomScalar generates a cryptographically random field element.
@@ -205,6 +217,25 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	if n <= 0 {
 		return nil, errors.New("rangeproof: n must be positive")
 	}
+	if Hbase == nil {
+		return nil, errors.New("rangeproof: Hbase must not be nil")
+	}
+	if r == nil {
+		return nil, errors.New("rangeproof: blinding factor r must not be nil")
+	}
+
+	// Validate Hbase is a valid, non-identity curve point.
+	if Hbase.IsInfinity() {
+		return nil, errors.New("rangeproof: Hbase must not be the identity point")
+	}
+	if !Hbase.IsOnCurve() {
+		return nil, errors.New("rangeproof: Hbase is not a valid curve point")
+	}
+
+	// Validate blinding factor is not zero (would make commitment deterministic).
+	if r.IsZero() {
+		return nil, errors.New("rangeproof: blinding factor r must not be zero")
+	}
 
 	// Check that v fits in n bits.
 	if n < 64 && v >= (1<<uint(n)) {
@@ -215,7 +246,10 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	n = nextPowerOf2(n)
 
 	// Get generators for this bit width.
-	gens := getGenerators(n)
+	gens, err := getGenerators(n)
+	if err != nil {
+		return nil, fmt.Errorf("rangeproof: %w", err)
+	}
 
 	// Step 2: Bit decompose v into a_L.
 	aL := make([]fr.Element, n)
@@ -293,6 +327,10 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	y := transcript.ChallengeScalar("y")
 	z := transcript.ChallengeScalar("z")
 
+	if y.IsZero() || z.IsZero() {
+		return nil, errors.New("rangeproof: degenerate Fiat-Shamir challenge (y or z is zero)")
+	}
+
 	// Precompute useful vectors.
 	yn := powerVector(&y, n)   // [1, y, y^2, ..., y^{n-1}]
 	twoN := twoVector(n)       // [1, 2, 4, ..., 2^{n-1}]
@@ -352,6 +390,10 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	transcript.AppendPoint("T2", &T2)
 	x := transcript.ChallengeScalar("x")
 
+	if x.IsZero() {
+		return nil, errors.New("rangeproof: degenerate Fiat-Shamir challenge (x is zero)")
+	}
+
 	// Step 17: Evaluate l = l(x), r = r(x).
 	// l = l_0 + l_1 * x
 	l1x := vecScalarMul(&x, l1)
@@ -398,9 +440,10 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	}
 
 	// Step 22: Run inner product argument on vectors l, r with generators Gens.G, H'
-	// and blinding U.
-	ipTranscript := elgamal.NewTranscript("bulletproofs-rangeproof-ip")
-	ipProof, err := InnerProductProve(gens.G, hPrime, &rangeProofU, lVec, rVec, ipTranscript)
+	// and blinding U. Continue the main transcript so IP challenges depend on
+	// all prior commitments (V, A, S, T1, T2) per Bulletproofs convention.
+	transcript.AppendBytes("ip_begin", []byte("ip"))
+	ipProof, err := InnerProductProve(gens.G, hPrime, &rangeProofU, lVec, rVec, transcript)
 	if err != nil {
 		return nil, fmt.Errorf("rangeproof: inner product prove failed: %w", err)
 	}
@@ -427,15 +470,33 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 //   - n: the bit width (will be padded to next power of 2)
 //   - transcript: optional pre-initialized Fiat-Shamir transcript (nil for default)
 func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) bool {
-	if n <= 0 {
+	if n <= 0 || V == nil || proof == nil || Hbase == nil {
 		return false
+	}
+
+	// Validate inputs.
+	if Hbase.IsInfinity() || !Hbase.IsOnCurve() {
+		return false
+	}
+	if V.IsInfinity() || !V.IsOnCurve() {
+		return false
+	}
+
+	// Validate proof points.
+	for _, p := range []bn254.G1Affine{proof.A, proof.S, proof.T1, proof.T2} {
+		if !p.IsOnCurve() {
+			return false
+		}
 	}
 
 	// Pad n to next power of 2.
 	n = nextPowerOf2(n)
 
 	// Get generators for this bit width.
-	gens := getGenerators(n)
+	gens, err := getGenerators(n)
+	if err != nil {
+		return false
+	}
 
 	// Step 2: Reconstruct y, z, x from transcript (V bound first, then A, S).
 	if transcript == nil {
@@ -449,9 +510,17 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 	y := transcript.ChallengeScalar("y")
 	z := transcript.ChallengeScalar("z")
 
+	if y.IsZero() || z.IsZero() {
+		return false
+	}
+
 	transcript.AppendPoint("T1", &proof.T1)
 	transcript.AppendPoint("T2", &proof.T2)
 	x := transcript.ChallengeScalar("x")
+
+	if x.IsZero() {
+		return false
+	}
 
 	// Precompute.
 	var z2, x2 fr.Element
@@ -566,11 +635,10 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 	pPrime.Add(&P, &negMuHbase)
 	pPrime.Add(&pPrime, &tHatU)
 
-	// Step 8: Verify inner product proof.
+	// Step 8: Verify inner product proof. Continue the main transcript so IP
+	// challenges are bound to all prior commitments, matching the prover.
 	// P' = <l, Gens.G> + <r, H'> + tHat * U
-	ipTranscript := elgamal.NewTranscript("bulletproofs-rangeproof-ip")
-	return InnerProductVerify(gens.G, hPrime, &rangeProofU, &pPrime, &proof.IP, ipTranscript)
+	transcript.AppendBytes("ip_begin", []byte("ip"))
+	return InnerProductVerify(gens.G, hPrime, &rangeProofU, &pPrime, &proof.IP, transcript)
 }
 
-// Ensure rand import is used.
-var _ = rand.Reader

@@ -1,0 +1,10 @@
+bulletproofs-bn254
+Copyright 2025 NixProtocol
+
+Website: https://nixprotocol.com
+GitHub:  https://github.com/nixprotocol
+
+Bulletproofs zero-knowledge range proofs over BN254 for Cosmos SDK chains.
+Originally developed as part of the NixProtocol privacy infrastructure.
+
+This product includes software developed by NixProtocol.

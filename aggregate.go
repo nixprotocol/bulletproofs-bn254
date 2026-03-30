@@ -42,6 +42,27 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	if n <= 0 {
 		return nil, errors.New("aggregate rangeproof: n must be positive")
 	}
+	if Hbase == nil {
+		return nil, errors.New("aggregate rangeproof: Hbase must not be nil")
+	}
+
+	// Validate Hbase is a valid, non-identity curve point.
+	if Hbase.IsInfinity() {
+		return nil, errors.New("aggregate rangeproof: Hbase must not be the identity point")
+	}
+	if !Hbase.IsOnCurve() {
+		return nil, errors.New("aggregate rangeproof: Hbase is not a valid curve point")
+	}
+
+	// Validate blinding factors are not zero.
+	for j, r := range blindings {
+		if r == nil {
+			return nil, fmt.Errorf("aggregate rangeproof: blinding[%d] must not be nil", j)
+		}
+		if r.IsZero() {
+			return nil, fmt.Errorf("aggregate rangeproof: blinding[%d] must not be zero", j)
+		}
+	}
 
 	// Check that each value fits in n bits.
 	for j, v := range values {
@@ -50,12 +71,18 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 		}
 	}
 
-	// Total dimension: nextPow2(n * m).
+	// Total dimension: nextPow2(n * m). Guard against integer overflow.
+	if n > maxGeneratorN/m {
+		return nil, fmt.Errorf("aggregate rangeproof: n*m exceeds maximum generator dimension %d", maxGeneratorN)
+	}
 	nm := n * m
 	dim := nextPowerOf2(nm)
 
 	// Get generators for this dimension.
-	gens := getGenerators(dim)
+	gens, err := getGenerators(dim)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate rangeproof: %w", err)
+	}
 
 	// Step 1: Bit decompose all values into a_L of length dim.
 	// Bits of value j are at indices [j*n .. (j+1)*n - 1].
@@ -139,6 +166,10 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	y := transcript.ChallengeScalar("y")
 	z := transcript.ChallengeScalar("z")
 
+	if y.IsZero() || z.IsZero() {
+		return nil, errors.New("aggregate rangeproof: degenerate Fiat-Shamir challenge (y or z is zero)")
+	}
+
 	// Precompute useful vectors.
 	yn := powerVector(&y, dim) // [1, y, y^2, ..., y^{dim-1}]
 	twoN := twoVector(n)       // [1, 2, 4, ..., 2^{n-1}]
@@ -209,6 +240,10 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	transcript.AppendPoint("T2", &T2)
 	x := transcript.ChallengeScalar("x")
 
+	if x.IsZero() {
+		return nil, errors.New("aggregate rangeproof: degenerate Fiat-Shamir challenge (x is zero)")
+	}
+
 	// Evaluate l = l(x), r = r(x).
 	l1x := vecScalarMul(&x, l1)
 	lVec := vecAdd(l0, l1x)
@@ -254,9 +289,10 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 		hPrime[i].ScalarMultiplication(&gens.H[i], &s)
 	}
 
-	// Run inner product argument.
-	ipTranscript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof-ip")
-	ipProof, err := InnerProductProve(gens.G, hPrime, &rangeProofU, lVec, rVec, ipTranscript)
+	// Run inner product argument. Continue the main transcript so IP challenges
+	// are bound to all prior commitments per Bulletproofs convention.
+	transcript.AppendBytes("ip_begin", []byte("ip"))
+	ipProof, err := InnerProductProve(gens.G, hPrime, &rangeProofU, lVec, rVec, transcript)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate rangeproof: inner product prove failed: %w", err)
 	}
@@ -283,14 +319,37 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 //   - n: the bit width per value
 func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase *bn254.G1Affine, n int, transcript *elgamal.Transcript) bool {
 	m := len(V)
-	if m == 0 || n <= 0 {
+	if m == 0 || n <= 0 || proof == nil || Hbase == nil {
 		return false
 	}
 
+	// Validate inputs.
+	if Hbase.IsInfinity() || !Hbase.IsOnCurve() {
+		return false
+	}
+	for j := range V {
+		if V[j].IsInfinity() || !V[j].IsOnCurve() {
+			return false
+		}
+	}
+
+	// Validate proof points.
+	for _, p := range []bn254.G1Affine{proof.A, proof.S, proof.T1, proof.T2} {
+		if !p.IsOnCurve() {
+			return false
+		}
+	}
+
+	if n > maxGeneratorN/m {
+		return false
+	}
 	nm := n * m
 	dim := nextPowerOf2(nm)
 
-	gens := getGenerators(dim)
+	gens, err := getGenerators(dim)
+	if err != nil {
+		return false
+	}
 
 	// Reconstruct y, z, x from transcript (V_j bound first, then A, S).
 	if transcript == nil {
@@ -306,9 +365,17 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 	y := transcript.ChallengeScalar("y")
 	z := transcript.ChallengeScalar("z")
 
+	if y.IsZero() || z.IsZero() {
+		return false
+	}
+
 	transcript.AppendPoint("T1", &proof.T1)
 	transcript.AppendPoint("T2", &proof.T2)
 	x := transcript.ChallengeScalar("x")
+
+	if x.IsZero() {
+		return false
+	}
 
 	// Precompute.
 	var x2 fr.Element
@@ -456,9 +523,9 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 	pPrime.Add(&P, &negMuHbase)
 	pPrime.Add(&pPrime, &tHatU)
 
-	// Verify inner product proof.
-	ipTranscript := elgamal.NewTranscript("bulletproofs-aggregate-rangeproof-ip")
-	return InnerProductVerify(gens.G, hPrime, &rangeProofU, &pPrime, &proof.IP, ipTranscript)
+	// Verify inner product proof. Continue the main transcript, matching the prover.
+	transcript.AppendBytes("ip_begin", []byte("ip"))
+	return InnerProductVerify(gens.G, hPrime, &rangeProofU, &pPrime, &proof.IP, transcript)
 }
 
 // computeAggregateDelta computes delta(y,z) for the aggregate case:

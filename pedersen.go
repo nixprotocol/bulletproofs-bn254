@@ -1,12 +1,10 @@
 package bulletproofs
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
+	"fmt"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 
 	elgamal "github.com/nixprotocol/elgamal-bn254"
@@ -26,7 +24,11 @@ func PedersenCommit(v, r *fr.Element) bn254.G1Affine {
 }
 
 // PedersenCommitWithBase computes v*G + r*H with caller-supplied bases.
+// Panics if any argument is nil. Callers must validate inputs.
 func PedersenCommitWithBase(v *fr.Element, G *bn254.G1Affine, r *fr.Element, H *bn254.G1Affine) bn254.G1Affine {
+	if v == nil || G == nil || r == nil || H == nil {
+		panic("PedersenCommitWithBase: nil argument")
+	}
 	var vBig, rBig big.Int
 	v.BigInt(&vBig)
 	r.BigInt(&rBig)
@@ -47,46 +49,17 @@ func PedersenCommitWithBase(v *fr.Element, G *bn254.G1Affine, r *fr.Element, H *
 	return out
 }
 
+// hashToG1DST is the domain separation tag for hash-to-curve (RFC 9380).
+// Derived from ProofVersion so DST and version constant cannot drift apart.
+var hashToG1DST = []byte(fmt.Sprintf("bulletproofs-bn254-v%d", ProofVersion))
+
 // hashToG1 deterministically maps arbitrary data to a point on BN254 G1
-// using the try-and-increment method.
+// using the constant-time Simplified SWU method per RFC 9380.
 func hashToG1(data []byte) bn254.G1Affine {
-	for counter := uint32(0); ; counter++ {
-		// Hash: SHA256(data || counter)
-		h := sha256.New()
-		h.Write(data)
-		buf := make([]byte, 4)
-		binary.BigEndian.PutUint32(buf, counter)
-		h.Write(buf)
-		xBytes := h.Sum(nil) // 32 bytes
-
-		// Try to create a valid G1 point from x-coordinate
-		var x fp.Element
-		x.SetBytes(xBytes)
-
-		// Compute y^2 = x^3 + 3 (BN254: y^2 = x^3 + b, where b=3)
-		var x3, y2, b fp.Element
-		x3.Square(&x)
-		x3.Mul(&x3, &x)
-		b.SetUint64(3)
-		y2.Add(&x3, &b)
-
-		// Check if y2 is a quadratic residue
-		var y fp.Element
-		if y.Sqrt(&y2) == nil {
-			continue // not a QR, try next counter
-		}
-
-		// Construct point
-		var p bn254.G1Affine
-		p.X = x
-		p.Y = y
-
-		if p.IsOnCurve() && !p.IsInfinity() {
-			return p
-		}
+	p, err := bn254.HashToG1(data, hashToG1DST)
+	if err != nil {
+		panic("hashToG1: " + err.Error())
 	}
+	return p
 }
 
-// Ensure imports are used.
-var _ = binary.BigEndian
-var _ = (*big.Int)(nil)

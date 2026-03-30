@@ -35,11 +35,20 @@ func InnerProductProve(
 	a, b []fr.Element,
 	transcript *elgamal.Transcript,
 ) (*IPProof, error) {
+	if U == nil {
+		return nil, errors.New("innerproduct: U must not be nil")
+	}
+	if transcript == nil {
+		return nil, errors.New("innerproduct: transcript must not be nil")
+	}
 	if len(a) != len(b) {
 		return nil, errors.New("innerproduct: a and b must have the same length")
 	}
 	if len(a) == 0 {
 		return nil, errors.New("innerproduct: vectors must not be empty")
+	}
+	if len(G) == 0 || len(H) == 0 {
+		return nil, errors.New("innerproduct: generator vectors must not be empty")
 	}
 
 	// Pad to next power of 2.
@@ -57,6 +66,18 @@ func InnerProductProve(
 		R: make([]bn254.G1Affine, 0, rounds),
 	}
 
+	// Pre-allocate workspace to avoid per-round heap allocations.
+	// MSM workspace: max 2*(n/2)+1 = n+1 scalars and points.
+	msmScalars := make([]fr.Element, n+1)
+	msmPoints := make([]bn254.G1Affine, n+1)
+	// Fold output buffers (max size n/2). Safe for in-place use because
+	// foldScalarsPairInto/foldPointsPairInto read index i before writing it.
+	half0 := n / 2
+	aBuf := make([]fr.Element, half0)
+	bBuf := make([]fr.Element, half0)
+	gBuf := make([]bn254.G1Affine, half0)
+	hBuf := make([]bn254.G1Affine, half0)
+
 	for n > 1 {
 		half := n / 2
 
@@ -71,10 +92,10 @@ func InnerProductProve(
 		cR := innerProduct(aHi, bLo)
 
 		// L = <aLo, gHi> + <bHi, hLo> + cL * U
-		L := computeFoldCommitment(aLo, gHi, bHi, hLo, &cL, U)
+		L := computeFoldCommitmentInto(aLo, gHi, bHi, hLo, &cL, U, msmScalars, msmPoints)
 
 		// R = <aHi, gLo> + <bLo, hHi> + cR * U
-		R := computeFoldCommitment(aHi, gLo, bLo, hHi, &cR, U)
+		R := computeFoldCommitmentInto(aHi, gLo, bLo, hHi, &cR, U, msmScalars, msmPoints)
 
 		proof.L = append(proof.L, L)
 		proof.R = append(proof.R, R)
@@ -91,20 +112,28 @@ func InnerProductProve(
 		var xInv fr.Element
 		xInv.Inverse(&x)
 
-		// Fold witness vectors (Bulletproofs convention):
+		// Fold witness vectors into pre-allocated buffers.
 		//   a' = x * aLo + x^{-1} * aHi
 		//   b' = x^{-1} * bLo + x * bHi
-		aNew := foldScalarsPair(aLo, aHi, &x, &xInv)
-		bNew := foldScalarsPair(bLo, bHi, &xInv, &x)
+		dst := aBuf[:half]
+		foldScalarsPairInto(dst, aLo, aHi, &x, &xInv)
+		a = dst
+
+		dst = bBuf[:half]
+		foldScalarsPairInto(dst, bLo, bHi, &xInv, &x)
+		b = dst
 
 		// Fold generators:
 		//   G' = x^{-1} * gLo + x * gHi
 		//   H' = x * hLo + x^{-1} * hHi
-		gNew := foldPointsPair(gLo, gHi, &xInv, &x)
-		hNew := foldPointsPair(hLo, hHi, &x, &xInv)
+		pdst := gBuf[:half]
+		foldPointsPairInto(pdst, gLo, gHi, &xInv, &x)
+		G = pdst
 
-		a, b = aNew, bNew
-		G, H = gNew, hNew
+		pdst = hBuf[:half]
+		foldPointsPairInto(pdst, hLo, hHi, &x, &xInv)
+		H = pdst
+
 		n = half
 	}
 
@@ -125,6 +154,13 @@ func InnerProductVerify(
 	proof *IPProof,
 	transcript *elgamal.Transcript,
 ) bool {
+	if U == nil || P == nil || proof == nil || transcript == nil {
+		return false
+	}
+	if len(G) == 0 || len(H) == 0 {
+		return false
+	}
+
 	n := nextPowerOf2(len(G))
 	G = padToPowerOf2Points(G, n)
 	H = padToPowerOf2Points(H, n)
@@ -135,6 +171,13 @@ func InnerProductVerify(
 	}
 	if k != bits.TrailingZeros(uint(n)) {
 		return false
+	}
+
+	// Validate all proof L/R points are on curve.
+	for i := 0; i < k; i++ {
+		if !proof.L[i].IsOnCurve() || !proof.R[i].IsOnCurve() {
+			return false
+		}
 	}
 
 	// Reconstruct challenges from transcript.
@@ -277,62 +320,60 @@ func multiScalarMul(scalars []fr.Element, points []bn254.G1Affine) bn254.G1Affin
 	return result
 }
 
-// computeFoldCommitment computes:
+// computeFoldCommitmentInto computes:
 //
 //	<aVec, gVec> + <bVec, hVec> + c * U
 //
 // using a single multi-scalar multiplication.
-func computeFoldCommitment(
+// It writes into pre-allocated workspace slices to avoid per-call allocations.
+func computeFoldCommitmentInto(
 	aVec []fr.Element, gVec []bn254.G1Affine,
 	bVec []fr.Element, hVec []bn254.G1Affine,
 	c *fr.Element, U *bn254.G1Affine,
+	scalars []fr.Element, points []bn254.G1Affine,
 ) bn254.G1Affine {
 	half := len(aVec)
 	total := 2*half + 1
-	scalars := make([]fr.Element, total)
-	points := make([]bn254.G1Affine, total)
+	s := scalars[:total]
+	p := points[:total]
 
 	for i := 0; i < half; i++ {
-		scalars[i].Set(&aVec[i])
-		points[i] = gVec[i]
+		s[i].Set(&aVec[i])
+		p[i] = gVec[i]
 	}
 	for i := 0; i < half; i++ {
-		scalars[half+i].Set(&bVec[i])
-		points[half+i] = hVec[i]
+		s[half+i].Set(&bVec[i])
+		p[half+i] = hVec[i]
 	}
-	scalars[2*half].Set(c)
-	points[2*half] = *U
+	s[2*half].Set(c)
+	p[2*half] = *U
 
-	return multiScalarMul(scalars, points)
+	return multiScalarMul(s, p)
 }
 
-// foldScalarsPair computes result[i] = alpha * lo[i] + beta * hi[i].
-func foldScalarsPair(lo, hi []fr.Element, alpha, beta *fr.Element) []fr.Element {
-	n := len(lo)
-	result := make([]fr.Element, n)
-	for i := 0; i < n; i++ {
+// foldScalarsPairInto computes dst[i] = alpha * lo[i] + beta * hi[i].
+// dst must have length >= len(lo).
+func foldScalarsPairInto(dst, lo, hi []fr.Element, alpha, beta *fr.Element) {
+	for i := range lo {
 		var t1, t2 fr.Element
 		t1.Mul(alpha, &lo[i])
 		t2.Mul(beta, &hi[i])
-		result[i].Add(&t1, &t2)
+		dst[i].Add(&t1, &t2)
 	}
-	return result
 }
 
-// foldPointsPair computes P'[i] = alpha * lo[i] + beta * hi[i].
-func foldPointsPair(lo, hi []bn254.G1Affine, alpha, beta *fr.Element) []bn254.G1Affine {
-	n := len(lo)
-	result := make([]bn254.G1Affine, n)
+// foldPointsPairInto computes dst[i] = alpha * lo[i] + beta * hi[i].
+// dst must have length >= len(lo).
+func foldPointsPairInto(dst []bn254.G1Affine, lo, hi []bn254.G1Affine, alpha, beta *fr.Element) {
 	var alphaBig, betaBig big.Int
 	alpha.BigInt(&alphaBig)
 	beta.BigInt(&betaBig)
-	for i := 0; i < n; i++ {
+	for i := range lo {
 		var sLo, sHi bn254.G1Affine
 		sLo.ScalarMultiplication(&lo[i], &alphaBig)
 		sHi.ScalarMultiplication(&hi[i], &betaBig)
-		result[i].Add(&sLo, &sHi)
+		dst[i].Add(&sLo, &sHi)
 	}
-	return result
 }
 
 // nextPowerOf2 returns the smallest power of 2 >= n.
@@ -340,14 +381,7 @@ func nextPowerOf2(n int) int {
 	if n <= 1 {
 		return 1
 	}
-	n--
-	n |= n >> 1
-	n |= n >> 2
-	n |= n >> 4
-	n |= n >> 8
-	n |= n >> 16
-	n++
-	return n
+	return 1 << bits.Len(uint(n-1))
 }
 
 // padToPowerOf2Field pads a scalar vector with zeros to length target.
@@ -376,6 +410,3 @@ func padToPowerOf2Points(pts []bn254.G1Affine, target int) []bn254.G1Affine {
 	}
 	return out
 }
-
-// Ensure elgamal import is used (transcript type).
-var _ = elgamal.NewTranscript

@@ -2,6 +2,7 @@ package bulletproofs
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
 )
@@ -14,7 +15,11 @@ type Generators struct {
 }
 
 // NewGenerators creates n independent generators via hash-to-curve.
+// Panics if n <= 0 or n > maxGeneratorN.
 func NewGenerators(n int) *Generators {
+	if n <= 0 || n > maxGeneratorN {
+		panic(fmt.Sprintf("NewGenerators: n=%d out of range [1, %d]", n, maxGeneratorN))
+	}
 	gens := &Generators{
 		G: make([]bn254.G1Affine, n),
 		H: make([]bn254.G1Affine, n),

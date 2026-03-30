@@ -93,6 +93,66 @@ func TestThresholdGreaterThan_Equal(t *testing.T) {
 	assert.Error(t, err, "v=1000 is not greater than threshold=1000, prove should fail")
 }
 
+func TestThreshold_NilInputs(t *testing.T) {
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	_, err = ProveLessThan(5, nil, &H, 10, 8, nil)
+	assert.Error(t, err, "nil r should be rejected")
+
+	_, err = ProveLessThan(5, &r, nil, 10, 8, nil)
+	assert.Error(t, err, "nil Hbase should be rejected")
+
+	_, err = ProveGreaterThan(15, nil, &H, 10, 8, nil)
+	assert.Error(t, err, "nil r should be rejected")
+
+	_, err = ProveGreaterThan(15, &r, nil, 10, 8, nil)
+	assert.Error(t, err, "nil Hbase should be rejected")
+}
+
+func TestThreshold_OverflowGuards(t *testing.T) {
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	// threshold=0 should be rejected for less-than.
+	_, err = ProveLessThan(0, &r, &H, 0, 8, nil)
+	assert.Error(t, err, "threshold=0 should be rejected for ProveLessThan")
+
+	// threshold=MaxUint64 should be rejected for greater-than.
+	_, err = ProveGreaterThan(^uint64(0), &r, &H, ^uint64(0), 8, nil)
+	assert.Error(t, err, "threshold=MaxUint64 should be rejected for ProveGreaterThan")
+}
+
+func TestThresholdVerify_NilInputs(t *testing.T) {
+	v := uint64(5000)
+	threshold := uint64(10000)
+	n := 40
+
+	var r fr.Element
+	_, err := r.SetRandom()
+	require.NoError(t, err)
+
+	V := commitValue(v, &r, &H)
+
+	proof, err := ProveLessThan(v, &r, &H, threshold, n, nil)
+	require.NoError(t, err)
+
+	assert.False(t, VerifyLessThan(nil, proof, &H, threshold, n, nil), "nil V should fail")
+	assert.False(t, VerifyLessThan(&V, nil, &H, threshold, n, nil), "nil proof should fail")
+	assert.False(t, VerifyLessThan(&V, proof, nil, threshold, n, nil), "nil Hbase should fail")
+	assert.False(t, VerifyLessThan(&V, proof, &H, 0, n, nil), "threshold=0 should fail")
+
+	proof2, err := ProveGreaterThan(v, &r, &H, 1000, n, nil)
+	require.NoError(t, err)
+
+	assert.False(t, VerifyGreaterThan(nil, proof2, &H, 1000, n, nil), "nil V should fail")
+	assert.False(t, VerifyGreaterThan(&V, nil, &H, 1000, n, nil), "nil proof should fail")
+	assert.False(t, VerifyGreaterThan(&V, proof2, nil, 1000, n, nil), "nil Hbase should fail")
+	assert.False(t, VerifyGreaterThan(&V, proof2, &H, ^uint64(0), n, nil), "threshold=MaxUint64 should fail")
+}
+
 func TestThresholdLessThan_WithTranscript(t *testing.T) {
 	v := uint64(5000)
 	threshold := uint64(10000)

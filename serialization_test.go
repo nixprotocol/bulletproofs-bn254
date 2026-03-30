@@ -1,6 +1,7 @@
 package bulletproofs
 
 import (
+	"encoding/binary"
 	"math/bits"
 	"testing"
 
@@ -129,4 +130,15 @@ func TestUnmarshalInvalid(t *testing.T) {
 	var tp ThresholdProof
 	err = tp.Unmarshal([]byte{})
 	assert.Error(t, err, "empty data should fail unmarshal")
+}
+
+func TestIPProofUnmarshal_ExcessiveRounds(t *testing.T) {
+	// Craft a header with numRounds = maxIPRounds + 1.
+	data := make([]byte, 4)
+	binary.BigEndian.PutUint32(data[:4], uint32(maxIPRounds+1))
+
+	var ip IPProof
+	err := ip.Unmarshal(data)
+	assert.Error(t, err, "excessive numRounds should fail")
+	assert.Contains(t, err.Error(), "exceeds maximum")
 }
