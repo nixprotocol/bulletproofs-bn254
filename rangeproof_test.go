@@ -271,12 +271,16 @@ func TestRangeVerify_OffCurveProofPoints(t *testing.T) {
 	proof, err := RangeProve(v, &r, &H, n, nil)
 	require.NoError(t, err)
 
-	// Corrupt proof.A to an off-curve point.
+	// Corrupt proof.A to a deterministic off-curve point.
 	tampered := *proof
-	tampered.A.Y.SetOne()
-	if !tampered.A.IsOnCurve() {
-		assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve proof.A should fail verify")
+	for i := 0; i < 100; i++ {
+		tampered.A.Y.SetUint64(uint64(i + 1))
+		if !tampered.A.IsOnCurve() {
+			break
+		}
 	}
+	require.False(t, tampered.A.IsOnCurve(), "failed to create off-curve point")
+	assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve proof.A should fail verify")
 }
 
 func TestRangeProof_WithTranscript(t *testing.T) {

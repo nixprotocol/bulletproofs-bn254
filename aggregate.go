@@ -84,14 +84,13 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 		return nil, fmt.Errorf("aggregate rangeproof: %w", err)
 	}
 
-	// Step 1: Bit decompose all values into a_L of length dim.
+	// Step 1: Bit decompose all values into a_L of length dim (constant-time
+	// to avoid leaking Hamming weights through timing side channels).
 	// Bits of value j are at indices [j*n .. (j+1)*n - 1].
 	aL := make([]fr.Element, dim)
 	for j := 0; j < m; j++ {
 		for i := 0; i < n; i++ {
-			if (values[j]>>uint(i))&1 == 1 {
-				aL[j*n+i].SetOne()
-			}
+			aL[j*n+i].SetUint64((values[j] >> uint(i)) & 1)
 		}
 	}
 
@@ -390,8 +389,8 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 	}
 
 	// Compute delta(y,z) for aggregate case.
-	// delta = (z - z^2) * <1^{nm}, y^{nm}> - sum_j(z^{2+j}) * <1^n, 2^n>
-	delta := computeAggregateDelta(&y, &z, n, m, dim)
+	// delta = (z - z^2) * <1^{nm}, y^{nm}> - sum_j(z^{3+j}) * <1^n, 2^n>
+	delta := computeAggregateDelta(&y, &z, n, m)
 
 	// Check: t_hat*G + tau_x*Hbase == sum_j(z^{2+j} * V_j) + delta*G + x*T1 + x^2*T2
 	GPoint := elgamal.G
@@ -530,12 +529,12 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 
 // computeAggregateDelta computes delta(y,z) for the aggregate case:
 // delta = (z - z^2) * <1^{nm}, y^{nm}> - sum_j(z^{3+j}) * <1^n, 2^n>
-// where nm = n*m (before padding to dim).
+// where nm = n*m.
 //
 // The z^{3+j} exponent (not z^{2+j}) arises because in the t0 derivation,
 // the term -z * <1, z2Vec> contributes an extra factor of z beyond the
 // z^{2+j} weights already present in z2Vec.
-func computeAggregateDelta(y, z *fr.Element, n, m, dim int) fr.Element {
+func computeAggregateDelta(y, z *fr.Element, n, m int) fr.Element {
 	nm := n * m
 
 	// <1^{nm}, y^{nm}> = sum of y^i for i=0..nm-1 (only non-padded entries)

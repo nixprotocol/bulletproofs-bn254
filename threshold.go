@@ -32,6 +32,10 @@ func ProveLessThan(v uint64, r *fr.Element, Hbase *bn254.G1Affine, threshold uin
 		return nil, fmt.Errorf("value %d is not less than threshold %d", v, threshold)
 	}
 	derived := threshold - v - 1
+	nPadded := nextPowerOf2(n)
+	if nPadded < 64 && derived >= (1<<uint(nPadded)) {
+		return nil, fmt.Errorf("threshold: derived value %d (threshold %d - v - 1) does not fit in %d bits", derived, threshold, n)
+	}
 	// Derived commitment: V_derived = derived*G + (-r)*Hbase = (threshold-1)*G - V
 	// The prover proves with the derived value and negated blinding.
 	var negR fr.Element
@@ -81,6 +85,10 @@ func ProveGreaterThan(v uint64, r *fr.Element, Hbase *bn254.G1Affine, threshold 
 		return nil, fmt.Errorf("value %d is not greater than threshold %d", v, threshold)
 	}
 	derived := v - threshold - 1
+	nPadded := nextPowerOf2(n)
+	if nPadded < 64 && derived >= (1<<uint(nPadded)) {
+		return nil, fmt.Errorf("threshold: derived value %d (v - threshold %d - 1) does not fit in %d bits", derived, threshold, n)
+	}
 	// V_derived = derived*G + r*Hbase = V - (threshold+1)*G
 	// Prover uses same r (not negated) since the subtraction is from the value side.
 	proof, err := RangeProve(derived, r, Hbase, n, transcript)

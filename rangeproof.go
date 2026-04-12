@@ -251,13 +251,11 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 		return nil, fmt.Errorf("rangeproof: %w", err)
 	}
 
-	// Step 2: Bit decompose v into a_L.
+	// Step 2: Bit decompose v into a_L (constant-time to avoid leaking
+	// the Hamming weight of v through timing side channels).
 	aL := make([]fr.Element, n)
 	for i := 0; i < n; i++ {
-		if (v>>uint(i))&1 == 1 {
-			aL[i].SetOne()
-		}
-		// else aL[i] is zero (default)
+		aL[i].SetUint64((v >> uint(i)) & 1)
 	}
 
 	// Step 3: a_R = a_L - 1^n (componentwise).

@@ -111,10 +111,16 @@ func TestRangeVerify_CorruptEachProofPoint(t *testing.T) {
 	proof, err := RangeProve(v, &r, &H, n, nil)
 	require.NoError(t, err)
 
-	// Helper to create off-curve point.
+	// Helper to create a deterministic off-curve point by incrementing Y
+	// until the point is no longer on the curve.
 	makeOffCurve := func(p bn254.G1Affine) bn254.G1Affine {
-		p.Y.SetUint64(1) // corrupt Y
-		return p
+		for i := 0; i < 100; i++ {
+			p.Y.SetUint64(uint64(i + 1))
+			if !p.IsOnCurve() {
+				return p
+			}
+		}
+		panic("failed to create off-curve point after 100 attempts")
 	}
 
 	tests := []struct {
@@ -131,10 +137,7 @@ func TestRangeVerify_CorruptEachProofPoint(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tampered := *proof
 			tc.mutate(&tampered)
-			if !tampered.A.IsOnCurve() || !tampered.S.IsOnCurve() ||
-				!tampered.T1.IsOnCurve() || !tampered.T2.IsOnCurve() {
-				assert.False(t, RangeVerify(&V, &tampered, &H, n, nil))
-			}
+			assert.False(t, RangeVerify(&V, &tampered, &H, n, nil))
 		})
 	}
 }
@@ -153,6 +156,17 @@ func TestRangeVerify_CorruptIPProofLR(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(proof.IP.L) > 0, "need at least one round")
 
+	// Helper to create a deterministic off-curve point.
+	makeOffCurve := func(p bn254.G1Affine) bn254.G1Affine {
+		for i := 0; i < 100; i++ {
+			p.Y.SetUint64(uint64(i + 1))
+			if !p.IsOnCurve() {
+				return p
+			}
+		}
+		panic("failed to create off-curve point after 100 attempts")
+	}
+
 	// Corrupt L[0].
 	t.Run("corrupt L[0]", func(t *testing.T) {
 		tampered := *proof
@@ -160,10 +174,8 @@ func TestRangeVerify_CorruptIPProofLR(t *testing.T) {
 		copy(tampered.IP.L, proof.IP.L)
 		tampered.IP.R = make([]bn254.G1Affine, len(proof.IP.R))
 		copy(tampered.IP.R, proof.IP.R)
-		tampered.IP.L[0].Y.SetUint64(1)
-		if !tampered.IP.L[0].IsOnCurve() {
-			assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve L[0] should fail")
-		}
+		tampered.IP.L[0] = makeOffCurve(tampered.IP.L[0])
+		assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve L[0] should fail")
 	})
 
 	// Corrupt R[0].
@@ -173,10 +185,8 @@ func TestRangeVerify_CorruptIPProofLR(t *testing.T) {
 		copy(tampered.IP.L, proof.IP.L)
 		tampered.IP.R = make([]bn254.G1Affine, len(proof.IP.R))
 		copy(tampered.IP.R, proof.IP.R)
-		tampered.IP.R[0].Y.SetUint64(1)
-		if !tampered.IP.R[0].IsOnCurve() {
-			assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve R[0] should fail")
-		}
+		tampered.IP.R[0] = makeOffCurve(tampered.IP.R[0])
+		assert.False(t, RangeVerify(&V, &tampered, &H, n, nil), "off-curve R[0] should fail")
 	})
 }
 

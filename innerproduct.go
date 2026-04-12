@@ -2,6 +2,7 @@ package bulletproofs
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"math/bits"
 
@@ -47,8 +48,8 @@ func InnerProductProve(
 	if len(a) == 0 {
 		return nil, errors.New("innerproduct: vectors must not be empty")
 	}
-	if len(G) == 0 || len(H) == 0 {
-		return nil, errors.New("innerproduct: generator vectors must not be empty")
+	if len(G) != len(a) || len(H) != len(a) {
+		return nil, fmt.Errorf("innerproduct: length mismatch: len(a)=%d, len(G)=%d, len(H)=%d", len(a), len(G), len(H))
 	}
 
 	// Pad to next power of 2.
@@ -160,6 +161,9 @@ func InnerProductVerify(
 	if len(G) == 0 || len(H) == 0 {
 		return false
 	}
+	if len(G) != len(H) {
+		return false
+	}
 
 	n := nextPowerOf2(len(G))
 	G = padToPowerOf2Points(G, n)
@@ -173,9 +177,12 @@ func InnerProductVerify(
 		return false
 	}
 
-	// Validate all proof L/R points are on curve.
+	// Validate all proof L/R points are on curve and not identity.
 	for i := 0; i < k; i++ {
-		if !proof.L[i].IsOnCurve() || !proof.R[i].IsOnCurve() {
+		if !proof.L[i].IsOnCurve() || proof.L[i].IsInfinity() {
+			return false
+		}
+		if !proof.R[i].IsOnCurve() || proof.R[i].IsInfinity() {
 			return false
 		}
 	}
@@ -288,14 +295,14 @@ func InnerProductVerify(
 }
 
 // innerProduct computes <a, b> = sum(a[i] * b[i]).
+// Panics if a and b have different lengths.
 func innerProduct(a, b []fr.Element) fr.Element {
+	if len(a) != len(b) {
+		panic(fmt.Sprintf("innerProduct: length mismatch: len(a)=%d, len(b)=%d", len(a), len(b)))
+	}
 	var result fr.Element
 	result.SetZero()
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
+	for i := 0; i < len(a); i++ {
 		var tmp fr.Element
 		tmp.Mul(&a[i], &b[i])
 		result.Add(&result, &tmp)
@@ -305,6 +312,7 @@ func innerProduct(a, b []fr.Element) fr.Element {
 
 // multiScalarMul computes sum(scalars[i] * points[i]) using gnark-crypto's
 // optimized multi-scalar multiplication.
+// Panics if len(scalars) != len(points).
 func multiScalarMul(scalars []fr.Element, points []bn254.G1Affine) bn254.G1Affine {
 	if len(scalars) == 0 {
 		var inf bn254.G1Affine
@@ -314,8 +322,7 @@ func multiScalarMul(scalars []fr.Element, points []bn254.G1Affine) bn254.G1Affin
 	var result bn254.G1Affine
 	_, err := result.MultiExp(points, scalars, ecc.MultiExpConfig{})
 	if err != nil {
-		// Fallback: should not happen for valid inputs.
-		result.SetInfinity()
+		panic(fmt.Sprintf("multiScalarMul: MultiExp failed: %v", err))
 	}
 	return result
 }
@@ -362,17 +369,18 @@ func foldScalarsPairInto(dst, lo, hi []fr.Element, alpha, beta *fr.Element) {
 	}
 }
 
-// foldPointsPairInto computes dst[i] = alpha * lo[i] + beta * hi[i].
+// foldPointsPairInto computes dst[i] = alpha * lo[i] + beta * hi[i]
+// using Strauss-Shamir joint scalar multiplication (shares doublings
+// between the two scalar muls, ~1.5x faster than two independent muls).
 // dst must have length >= len(lo).
 func foldPointsPairInto(dst []bn254.G1Affine, lo, hi []bn254.G1Affine, alpha, beta *fr.Element) {
 	var alphaBig, betaBig big.Int
 	alpha.BigInt(&alphaBig)
 	beta.BigInt(&betaBig)
 	for i := range lo {
-		var sLo, sHi bn254.G1Affine
-		sLo.ScalarMultiplication(&lo[i], &alphaBig)
-		sHi.ScalarMultiplication(&hi[i], &betaBig)
-		dst[i].Add(&sLo, &sHi)
+		var jac bn254.G1Jac
+		jac.JointScalarMultiplication(&lo[i], &hi[i], &alphaBig, &betaBig)
+		dst[i].FromJacobian(&jac)
 	}
 }
 
