@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/consensys/gnark-crypto v0.19.2
-	github.com/nixprotocol/elgamal-bn254 v0.0.0-20260412100525-2809245ca8ca
+	github.com/nixprotocol/elgamal-bn254 v0.1.0
 	github.com/stretchr/testify v1.10.0
 )
 
