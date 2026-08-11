@@ -139,22 +139,6 @@ func BenchmarkAggregateVerify_2x40bit(b *testing.B) {
 	}
 }
 
-func BenchmarkThresholdProveLessThan(b *testing.B) {
-	var r fr.Element
-	r.SetRandom()
-
-	// Pre-warm the generator cache for n=40.
-	_, _ = getGenerators(nextPowerOf2(40))
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ProveLessThan(5000, &r, &H, 10000, 40, nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkInnerProductProve_64(b *testing.B) {
 	n := 64
 	gens := NewGenerators(n)
