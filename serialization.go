@@ -87,8 +87,11 @@ func (p *IPProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("ipproof unmarshal: numRounds %d exceeds maximum %d", k, maxIPRounds)
 	}
 	expectedSize := 4 + k*2*compressedG1Size + 2*scalarSize
-	if len(data) < expectedSize {
-		return fmt.Errorf("ipproof unmarshal: expected %d bytes, got %d", expectedSize, len(data))
+	// Exact, not a lower bound. A proof is a consensus artifact and must have
+	// exactly one wire form; accepting trailing bytes let a valid proof be
+	// padded into arbitrarily many distinct byte strings that all verify.
+	if len(data) != expectedSize {
+		return fmt.Errorf("ipproof unmarshal: expected exactly %d bytes, got %d", expectedSize, len(data))
 	}
 
 	offset := 4
