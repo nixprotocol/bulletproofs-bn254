@@ -241,6 +241,9 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	if !Hbase.IsOnCurve() {
 		return nil, errors.New("rangeproof: Hbase is not a valid curve point")
 	}
+	if isTrivialHbase(Hbase) {
+		return nil, errors.New("rangeproof: Hbase must not be G or -G (use bp.H)")
+	}
 
 	// Validate blinding factor is not zero (would make commitment deterministic).
 	if r.IsZero() {
@@ -488,7 +491,7 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 	}
 
 	// Validate inputs.
-	if Hbase.IsInfinity() || !Hbase.IsOnCurve() {
+	if Hbase.IsInfinity() || !Hbase.IsOnCurve() || isTrivialHbase(Hbase) {
 		return false
 	}
 	if V.IsInfinity() || !V.IsOnCurve() {

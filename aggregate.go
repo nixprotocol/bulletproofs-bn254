@@ -53,6 +53,9 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	if !Hbase.IsOnCurve() {
 		return nil, errors.New("aggregate rangeproof: Hbase is not a valid curve point")
 	}
+	if isTrivialHbase(Hbase) {
+		return nil, errors.New("aggregate rangeproof: Hbase must not be G or -G (use bp.H)")
+	}
 
 	// Validate blinding factors are not zero.
 	for j, r := range blindings {
@@ -324,7 +327,7 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 	}
 
 	// Validate inputs.
-	if Hbase.IsInfinity() || !Hbase.IsOnCurve() {
+	if Hbase.IsInfinity() || !Hbase.IsOnCurve() || isTrivialHbase(Hbase) {
 		return false
 	}
 	for j := range V {

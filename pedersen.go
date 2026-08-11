@@ -24,7 +24,11 @@ func PedersenCommit(v, r *fr.Element) bn254.G1Affine {
 }
 
 // PedersenCommitWithBase computes v*G + r*H with caller-supplied bases.
-// Panics if any argument is nil. Callers must validate inputs.
+// Panics if any argument is nil.
+//
+// Binding requires the prover to not know dlog_G(H). Use bp.H or another
+// generator of unknown dlog; a base like pk = sk*G makes the commitment
+// re-openable to any value.
 func PedersenCommitWithBase(v *fr.Element, G *bn254.G1Affine, r *fr.Element, H *bn254.G1Affine) bn254.G1Affine {
 	if v == nil || G == nil || r == nil || H == nil {
 		panic("PedersenCommitWithBase: nil argument")
@@ -61,5 +65,18 @@ func hashToG1(data []byte) bn254.G1Affine {
 		panic("hashToG1: " + err.Error())
 	}
 	return p
+}
+
+// isTrivialHbase reports whether Hbase is G or -G, which collapses a Pedersen
+// commitment to a multiple of G. Sanity guard only; a base whose dlog is
+// otherwise known (e.g. pk = sk*G) is undetectable — use bp.H.
+func isTrivialHbase(Hbase *bn254.G1Affine) bool {
+	G := elgamal.G
+	if Hbase.Equal(&G) {
+		return true
+	}
+	var negG bn254.G1Affine
+	negG.Neg(&G)
+	return Hbase.Equal(&negG)
 }
 

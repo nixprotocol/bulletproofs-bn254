@@ -155,6 +155,7 @@ Run benchmarks: `go test -bench=. -benchmem`
 
 - **Hash-to-curve**: uses gnark-crypto's RFC 9380 (Simplified SWU) implementation, constant-time
 - **Input validation**: all public API functions reject nil pointers, identity points, off-curve points, and zero blinding factors
+- **Commitment base safety**: the Pedersen blinding base `Hbase` must have an unknown discrete log w.r.t. `G`; use the provided `bp.H`. The verifier rejects the trivially-insecure `Hbase == ±G`. A base whose discrete log the prover knows (e.g. a participant public key `pk = sk*G`) is undetectable and makes the commitment re-openable to any value — it must be avoided by construction, not by validation
 - **Proof point validation**: verifiers check that all proof points (A, S, T1, T2, L[i], R[i]) are on-curve and not the identity before proceeding
 - **Challenge zero checks**: Fiat-Shamir challenges y, z, x are explicitly checked for zero in both provers and verifiers
 - **Serialization bounds**: deserialization rejects proofs with more than 64 inner product rounds, preventing allocation attacks
