@@ -11,7 +11,8 @@ package bulletproofs
 const (
 	// ProofVersion identifies the proof wire format and generator derivation.
 	// v2: RFC 9380 hash-to-curve, transcript continuation into IP argument.
-	ProofVersion = 2
+	// v3: bind n and Hbase into transcript; distinct poly/IP challenge labels.
+	ProofVersion = 3
 
 	// APIVersion tracks breaking API changes (signature, semantics).
 	// Bump on any change that requires callers to update their code.

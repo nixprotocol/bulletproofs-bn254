@@ -148,12 +148,13 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	S.Add(&sLG, &sRH)
 	S.Add(&S, &rhoHbase)
 
-	// Step 7: Transcript — bind all V_j, then append A, S and get challenges y, z.
+	// Step 7: Transcript — bind context, all V_j, then A, S and get challenges y, z.
 	if transcript == nil {
 		transcript = elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
 	} else {
 		transcript.AppendBytes("proof_type", []byte("aggregate-rangeproof"))
 	}
+	bindProofContext(transcript, n, Hbase)
 	for j := 0; j < m; j++ {
 		var vFr fr.Element
 		vFr.SetUint64(values[j])
@@ -237,7 +238,7 @@ func AggregateRangeProve(values []uint64, blindings []*fr.Element, Hbase *bn254.
 	// Transcript — append T1, T2 and get challenge x.
 	transcript.AppendPoint("T1", &T1)
 	transcript.AppendPoint("T2", &T2)
-	x := transcript.ChallengeScalar("x")
+	x := transcript.ChallengeScalar("x_poly")
 
 	if x.IsZero() {
 		return nil, errors.New("aggregate rangeproof: degenerate Fiat-Shamir challenge (x is zero)")
@@ -332,9 +333,9 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 		}
 	}
 
-	// Validate proof points.
+	// Validate proof points are on curve and not the identity.
 	for _, p := range []bn254.G1Affine{proof.A, proof.S, proof.T1, proof.T2} {
-		if !p.IsOnCurve() {
+		if !p.IsOnCurve() || p.IsInfinity() {
 			return false
 		}
 	}
@@ -350,12 +351,13 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 		return false
 	}
 
-	// Reconstruct y, z, x from transcript (V_j bound first, then A, S).
+	// Reconstruct y, z, x from transcript (context, then V_j, A, S).
 	if transcript == nil {
 		transcript = elgamal.NewTranscript("bulletproofs-aggregate-rangeproof")
 	} else {
 		transcript.AppendBytes("proof_type", []byte("aggregate-rangeproof"))
 	}
+	bindProofContext(transcript, n, Hbase)
 	for j := 0; j < m; j++ {
 		transcript.AppendPoint(fmt.Sprintf("V_%d", j), &V[j])
 	}
@@ -370,7 +372,7 @@ func AggregateRangeVerify(V []bn254.G1Affine, proof *AggregateRangeProof, Hbase 
 
 	transcript.AppendPoint("T1", &proof.T1)
 	transcript.AppendPoint("T2", &proof.T2)
-	x := transcript.ChallengeScalar("x")
+	x := transcript.ChallengeScalar("x_poly")
 
 	if x.IsZero() {
 		return false

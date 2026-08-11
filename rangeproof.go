@@ -1,6 +1,7 @@
 package bulletproofs
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -57,6 +58,15 @@ func getGenerators(n int) (*Generators, error) {
 	g := NewGenerators(n)
 	generatorCache[n] = g
 	return g, nil
+}
+
+// bindProofContext binds the dimension n and blinding base Hbase into the
+// transcript. Must be called at the same point in prover and verifier, before V.
+func bindProofContext(t *elgamal.Transcript, n int, Hbase *bn254.G1Affine) {
+	var nBuf [8]byte
+	binary.BigEndian.PutUint64(nBuf[:], uint64(n))
+	t.AppendBytes("n", nBuf[:])
+	t.AppendPoint("Hbase", Hbase)
 }
 
 // randomScalar generates a cryptographically random field element.
@@ -242,6 +252,9 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 		return nil, fmt.Errorf("rangeproof: value %d does not fit in %d bits", v, n)
 	}
 
+	// origN: caller-supplied bit-width, bound into the transcript before padding.
+	origN := n
+
 	// Pad n to next power of 2.
 	n = nextPowerOf2(n)
 
@@ -313,12 +326,14 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	vFr.SetUint64(v)
 	V := PedersenCommitWithBase(&vFr, &elgamal.G, r, Hbase)
 
-	// Step 9: Transcript - bind V, then append A, S and get challenges y, z.
+	// Step 9: Transcript - bind proof context (n, Hbase), then V, A, S and get
+	// challenges y, z.
 	if transcript == nil {
 		transcript = elgamal.NewTranscript("bulletproofs-rangeproof")
 	} else {
 		transcript.AppendBytes("proof_type", []byte("rangeproof"))
 	}
+	bindProofContext(transcript, origN, Hbase)
 	transcript.AppendPoint("V", &V)
 	transcript.AppendPoint("A", &A)
 	transcript.AppendPoint("S", &S)
@@ -386,7 +401,7 @@ func RangeProve(v uint64, r *fr.Element, Hbase *bn254.G1Affine, n int, transcrip
 	// Step 16: Transcript - append T1, T2 and get challenge x.
 	transcript.AppendPoint("T1", &T1)
 	transcript.AppendPoint("T2", &T2)
-	x := transcript.ChallengeScalar("x")
+	x := transcript.ChallengeScalar("x_poly")
 
 	if x.IsZero() {
 		return nil, errors.New("rangeproof: degenerate Fiat-Shamir challenge (x is zero)")
@@ -480,12 +495,15 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 		return false
 	}
 
-	// Validate proof points.
+	// Validate proof points are on curve and not the identity.
 	for _, p := range []bn254.G1Affine{proof.A, proof.S, proof.T1, proof.T2} {
-		if !p.IsOnCurve() {
+		if !p.IsOnCurve() || p.IsInfinity() {
 			return false
 		}
 	}
+
+	// origN: bit-width before padding (see RangeProve).
+	origN := n
 
 	// Pad n to next power of 2.
 	n = nextPowerOf2(n)
@@ -496,12 +514,13 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 		return false
 	}
 
-	// Step 2: Reconstruct y, z, x from transcript (V bound first, then A, S).
+	// Step 2: Reconstruct y, z, x from transcript (proof context, then V, A, S).
 	if transcript == nil {
 		transcript = elgamal.NewTranscript("bulletproofs-rangeproof")
 	} else {
 		transcript.AppendBytes("proof_type", []byte("rangeproof"))
 	}
+	bindProofContext(transcript, origN, Hbase)
 	transcript.AppendPoint("V", V)
 	transcript.AppendPoint("A", &proof.A)
 	transcript.AppendPoint("S", &proof.S)
@@ -514,7 +533,7 @@ func RangeVerify(V *bn254.G1Affine, proof *RangeProof, Hbase *bn254.G1Affine, n 
 
 	transcript.AppendPoint("T1", &proof.T1)
 	transcript.AppendPoint("T2", &proof.T2)
-	x := transcript.ChallengeScalar("x")
+	x := transcript.ChallengeScalar("x_poly")
 
 	if x.IsZero() {
 		return false
