@@ -17,8 +17,8 @@ import (
 type IPProof struct {
 	L []bn254.G1Affine // left folding commitments, len = ceil(log2(n))
 	R []bn254.G1Affine // right folding commitments, len = ceil(log2(n))
-	A fr.Element        // final scalar a
-	B fr.Element        // final scalar b
+	A fr.Element       // final scalar a
+	B fr.Element       // final scalar b
 }
 
 // InnerProductProve produces an inner product argument proof (Bünz et al. 2018, Protocol 1).

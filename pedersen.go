@@ -79,4 +79,3 @@ func isTrivialHbase(Hbase *bn254.G1Affine) bool {
 	negG.Neg(&G)
 	return Hbase.Equal(&negG)
 }
-

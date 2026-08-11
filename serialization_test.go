@@ -66,31 +66,6 @@ func TestIPProofMarshalRoundTrip(t *testing.T) {
 	}
 }
 
-func TestThresholdProofMarshalRoundTrip(t *testing.T) {
-	v := uint64(5000)
-	threshold := uint64(10000)
-	n := 40
-
-	var r fr.Element
-	_, err := r.SetRandom()
-	require.NoError(t, err)
-
-	V := commitValue(v, &r, &H)
-
-	proof, err := ProveLessThan(v, &r, &H, threshold, n, nil)
-	require.NoError(t, err)
-
-	data, err := proof.Marshal()
-	require.NoError(t, err)
-
-	var proof2 ThresholdProof
-	err = proof2.Unmarshal(data)
-	require.NoError(t, err)
-
-	ok := VerifyLessThan(&V, &proof2, &H, threshold, n, nil)
-	assert.True(t, ok, "unmarshaled threshold proof should verify")
-}
-
 func TestRangeProofSize(t *testing.T) {
 	v := uint64(42)
 	n := 8
@@ -126,10 +101,6 @@ func TestUnmarshalInvalid(t *testing.T) {
 	var ip IPProof
 	err = ip.Unmarshal([]byte{0, 0})
 	assert.Error(t, err, "truncated IP data should fail unmarshal")
-
-	var tp ThresholdProof
-	err = tp.Unmarshal([]byte{})
-	assert.Error(t, err, "empty data should fail unmarshal")
 }
 
 func TestIPProofUnmarshal_ExcessiveRounds(t *testing.T) {

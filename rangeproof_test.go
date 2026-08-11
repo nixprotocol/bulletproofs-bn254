@@ -58,7 +58,7 @@ func TestRangeProof_Zero(t *testing.T) {
 
 func TestRangeProof_MaxValue(t *testing.T) {
 	v := uint64((1 << 40) - 1) // 2^40 - 1
-	n := 40                     // padded to 64
+	n := 40                    // padded to 64
 
 	var r fr.Element
 	_, err := r.SetRandom()

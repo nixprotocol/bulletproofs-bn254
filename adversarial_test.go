@@ -53,9 +53,6 @@ func TestUnmarshal_RandomGarbage(t *testing.T) {
 
 		var arp AggregateRangeProof
 		arp.Unmarshal(data) //nolint:errcheck
-
-		var tp ThresholdProof
-		tp.Unmarshal(data) //nolint:errcheck
 	}
 }
 
@@ -402,16 +399,5 @@ func FuzzAggregateRangeProofUnmarshal(f *testing.F) {
 		var arp AggregateRangeProof
 		// Must not panic.
 		arp.Unmarshal(data) //nolint:errcheck
-	})
-}
-
-func FuzzThresholdProofUnmarshal(f *testing.F) {
-	f.Add([]byte{})
-	f.Add(make([]byte, 7*32+4))
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		var tp ThresholdProof
-		// Must not panic.
-		tp.Unmarshal(data) //nolint:errcheck
 	})
 }

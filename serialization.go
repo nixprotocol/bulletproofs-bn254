@@ -285,13 +285,3 @@ func (p *AggregateRangeProof) Unmarshal(data []byte) error {
 
 	return p.IP.Unmarshal(data[offset:])
 }
-
-// Marshal serializes a ThresholdProof to bytes (delegates to inner RangeProof).
-func (p *ThresholdProof) Marshal() ([]byte, error) {
-	return p.Proof.Marshal()
-}
-
-// Unmarshal deserializes a ThresholdProof from bytes.
-func (p *ThresholdProof) Unmarshal(data []byte) error {
-	return p.Proof.Unmarshal(data)
-}
