@@ -148,14 +148,15 @@ Run benchmarks: `go test -bench=. -benchmem`
 
 - **Zero-knowledge**: proofs reveal nothing about the committed value beyond the stated range
 - **Soundness**: a prover cannot convince a verifier of a false statement (under the discrete log assumption on BN254)
-- **Fiat-Shamir**: all interactive challenges are replaced with transcript hashing; commitment V is bound into the transcript to prevent proof transplant attacks
+- **Fiat-Shamir**: all interactive challenges are replaced with transcript hashing; commitment V is bound into the transcript to prevent proof transplant attacks, and the bit-width `n` and blinding base `Hbase` are bound to tie challenges to the exact proof parameters
 - **Inner product transcript continuation**: the IP argument continues the main range proof transcript, binding IP challenges to all prior commitments (V, A, S, T1, T2)
 
 ### Security Hardening
 
 - **Hash-to-curve**: uses gnark-crypto's RFC 9380 (Simplified SWU) implementation, constant-time
 - **Input validation**: all public API functions reject nil pointers, identity points, off-curve points, and zero blinding factors
-- **Proof point validation**: verifiers check that all proof points (A, S, T1, T2, L[i], R[i]) are on-curve before proceeding
+- **Commitment base safety**: the Pedersen blinding base `Hbase` must have an unknown discrete log w.r.t. `G`; use the provided `bp.H`. The verifier rejects the trivially-insecure `Hbase == ±G`. A base whose discrete log the prover knows (e.g. a participant public key `pk = sk*G`) is undetectable and makes the commitment re-openable to any value — it must be avoided by construction, not by validation
+- **Proof point validation**: verifiers check that all proof points (A, S, T1, T2, L[i], R[i]) are on-curve and not the identity before proceeding
 - **Challenge zero checks**: Fiat-Shamir challenges y, z, x are explicitly checked for zero in both provers and verifiers
 - **Serialization bounds**: deserialization rejects proofs with more than 64 inner product rounds, preventing allocation attacks
 - **Bounded generator cache**: generator vectors are cached with a maximum of 32 entries and vector length capped at 2^20
@@ -164,6 +165,10 @@ Run benchmarks: `go test -bench=. -benchmem`
 ### Breaking Changes from v1
 
 The hash-to-curve implementation was changed from try-and-increment to RFC 9380 (Simplified SWU). This changes all derived generators. Proofs created with v1 generators will not verify with v2. The DST is `"bulletproofs-bn254-v2"`.
+
+### Breaking Changes from v2
+
+The Fiat-Shamir transcript now binds the bit-width `n` and the Pedersen blinding base `Hbase` into challenge derivation, and the polynomial and inner-product rounds use distinct challenge labels (`x_poly`, `x_ip`). The polynomial-challenge and inner-product round labels are no longer both `x`. Proofs created with v2 will not verify with v3. The DST is `"bulletproofs-bn254-v3"`.
 
 ### Threat Model
 

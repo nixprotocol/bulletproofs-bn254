@@ -104,7 +104,7 @@ func InnerProductProve(
 		// Fiat-Shamir challenge.
 		transcript.AppendPoint("L", &L)
 		transcript.AppendPoint("R", &R)
-		x := transcript.ChallengeScalar("x")
+		x := transcript.ChallengeScalar("x_ip")
 
 		if x.IsZero() {
 			return nil, errors.New("innerproduct: challenge is zero")
@@ -193,7 +193,7 @@ func InnerProductVerify(
 	for i := 0; i < k; i++ {
 		transcript.AppendPoint("L", &proof.L[i])
 		transcript.AppendPoint("R", &proof.R[i])
-		challenges[i] = transcript.ChallengeScalar("x")
+		challenges[i] = transcript.ChallengeScalar("x_ip")
 		if challenges[i].IsZero() {
 			return false
 		}
