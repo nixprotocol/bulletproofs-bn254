@@ -216,3 +216,34 @@ func BenchmarkInnerProductVerify_64(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkAggregateVerify_2x64bit measures the configuration the confidential
+// module actually runs: two commitments (transfer amount + remaining balance)
+// at the default MaxTransferBits of 64. This is the dominant verification cost
+// in a ConfidentialSend, so gas for it should be calibrated against this number
+// rather than against the 40-bit case.
+func BenchmarkAggregateVerify_2x64bit(b *testing.B) {
+	values := []uint64{1000, 500}
+	blindings := make([]*fr.Element, len(values))
+	Vs := make([]bn254.G1Affine, len(values))
+	for j, v := range values {
+		var r fr.Element
+		r.SetRandom()
+		blindings[j] = new(fr.Element).Set(&r)
+		var vFr fr.Element
+		vFr.SetUint64(v)
+		Vs[j] = PedersenCommit(&vFr, blindings[j])
+	}
+
+	proof, err := AggregateRangeProve(values, blindings, &H, 64, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !AggregateRangeVerify(Vs, proof, &H, 64, nil) {
+			b.Fatal("verification failed")
+		}
+	}
+}

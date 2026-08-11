@@ -206,7 +206,9 @@ func TestRangeProof_ZeroBlinding(t *testing.T) {
 
 	_, err := RangeProve(v, &r, &H, n, nil)
 	assert.Error(t, err, "should reject zero blinding factor")
-	assert.Contains(t, err.Error(), "blinding factor")
+	// RangeProve delegates to the aggregate implementation, which reports
+	// "blinding[i] must not be zero".
+	assert.Contains(t, err.Error(), "blinding")
 }
 
 func TestRangeProof_NilInputs(t *testing.T) {

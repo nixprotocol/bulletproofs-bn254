@@ -73,8 +73,10 @@ func TestIPProofUnmarshal_ZeroRounds(t *testing.T) {
 }
 
 func TestIPProofUnmarshal_TrailingBytes(t *testing.T) {
-	// Valid proof data with extra trailing bytes should still unmarshal
-	// (we don't enforce exact size, just minimum).
+	// Trailing bytes must be REJECTED. This test previously asserted the
+	// opposite ("we don't enforce exact size, just minimum"), which made a
+	// valid proof paddable into arbitrarily many distinct byte strings that all
+	// verified — proof malleability on a consensus artifact.
 	v := uint64(42)
 	n := 8
 
@@ -93,7 +95,11 @@ func TestIPProofUnmarshal_TrailingBytes(t *testing.T) {
 
 	var ip IPProof
 	err = ip.Unmarshal(dataWithTrailing)
-	require.NoError(t, err, "trailing bytes should not cause error")
+	require.Error(t, err, "trailing bytes must be rejected")
+
+	// The exact encoding still round-trips.
+	var exact IPProof
+	require.NoError(t, exact.Unmarshal(data))
 }
 
 // --- Invalid curve points in proofs ---
@@ -353,7 +359,7 @@ func FuzzIPProofUnmarshal(f *testing.F) {
 	// Seed with edge cases.
 	f.Add([]byte{})
 	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0}) // zero rounds + partial scalars
-	f.Add(make([]byte, 4+2*32))              // zero rounds + two scalars
+	f.Add(make([]byte, 4+2*32))           // zero rounds + two scalars
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var ip IPProof
