@@ -8,7 +8,6 @@ Implements the Bulletproofs protocol from [Bünz et al. 2018](https://eprint.iac
 
 - **Range proofs** -- prove a committed value is in [0, 2^n) without revealing it
 - **Aggregate range proofs** -- prove multiple values in a single compact proof
-- **Threshold proofs** -- prove v < threshold or v > threshold
 - **Inner product arguments** -- standalone Protocol 1 from the paper
 - **Pedersen commitments** -- with configurable base points
 - **Serialization** -- compact binary encoding with compressed G1 points
@@ -58,16 +57,6 @@ func main() {
 }
 ```
 
-### Threshold Proof
-
-```go
-// Prove v < 10000.
-proof, err := bp.ProveLessThan(v, &r, &bp.H, 10000, 40, nil)
-
-// Verify against the public commitment.
-ok := bp.VerifyLessThan(&V, proof, &bp.H, 10000, 40, nil)
-```
-
 ### Aggregate Range Proof
 
 ```go
@@ -112,10 +101,6 @@ p2.Unmarshal(data)            // deserialize
 | `RangeVerify(V, proof, Hbase, n, transcript)` | Verify range proof |
 | `AggregateRangeProve(values, blindings, Hbase, n, transcript)` | Prove multiple values |
 | `AggregateRangeVerify(Vs, proof, Hbase, n, transcript)` | Verify aggregate proof |
-| `ProveLessThan(v, r, Hbase, threshold, n, transcript)` | Prove v < threshold |
-| `VerifyLessThan(V, proof, Hbase, threshold, n, transcript)` | Verify less-than |
-| `ProveGreaterThan(v, r, Hbase, threshold, n, transcript)` | Prove v > threshold |
-| `VerifyGreaterThan(V, proof, Hbase, threshold, n, transcript)` | Verify greater-than |
 | `PedersenCommit(v, r)` | Commit with standard generators G, H |
 | `PedersenCommitWithBase(v, G, r, H)` | Commit with custom generators |
 | `InnerProductProve(G, H, U, a, b, transcript)` | Standalone IPA prover |
