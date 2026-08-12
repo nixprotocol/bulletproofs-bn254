@@ -106,6 +106,17 @@ p2.Unmarshal(data)            // deserialize
 | `InnerProductProve(G, H, U, a, b, transcript)` | Standalone IPA prover |
 | `InnerProductVerify(G, H, U, P, proof, transcript)` | Standalone IPA verifier |
 
+### Types
+
+| Type | Returned by |
+|------|-------------|
+| `RangeProof` | `RangeProve` |
+| `AggregateRangeProof` | `AggregateRangeProve` |
+| `IPProof` | `InnerProductProve` |
+
+`RangeProve` and `RangeVerify` are thin wrappers over the aggregate path with a
+single commitment; `RangeProof` and `AggregateRangeProof` are field-identical.
+
 All proof types support `Marshal()`/`Unmarshal()` for binary serialization.
 
 ## Performance
